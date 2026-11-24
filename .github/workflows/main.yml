@@ -1,0 +1,224 @@
+# =============================================================================
+#  BUILD LINEAGEOS 15.0 (ANDROID 8.0) ULTRA-MINIMAL CHO SAMSUNG SM-T285
+#  Đây là file DUY NHẤT chứa logic build. Không tạo file workflow khác.
+# =============================================================================
+name: Build LineageOS 15.0 SM-T285 ULTRA-MINIMAL
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: rom-build-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ROM_NAME: LOS-15.0-SM-T285-ULTRA-MINIMAL-UNOFFICIAL
+  DEVICE: gtexslte
+  TARGET_PRODUCT: lineage_gtexslte
+  BUILD_VARIANT: user
+  ANDROID_VERSION: "8.0.0"
+  MANIFEST_URL: https://github.com/LineageOS/android.git
+  MANIFEST_BRANCH: lineage-15.0
+  SOURCE_DIR: ${{ github.workspace }}/aosp
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 4G
+  J_VAL: 4
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+
+    steps:
+      - name: "1. Checkout repo"
+        uses: actions/checkout@v4
+
+      - name: "2. Free disk space"
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: "3. Check resources"
+        run: |
+          set -e
+          AVAIL_GB=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+          RAM_MB=$(free -m | awk '/Mem:/ {print $2}')
+          CPUS=$(nproc)
+          echo "Free disk on /: ${AVAIL_GB}G | RAM: ${RAM_MB}MB | CPUs: ${CPUS}"
+          J=$(( CPUS > 4 ? 4 : CPUS ))
+          echo "J_VAL=$J" >> $GITHUB_ENV
+          if [ "$AVAIL_GB" -lt 40 ]; then
+            echo "::error::Chỉ còn ${AVAIL_GB}G đĩa. Cần >=40G. Dùng runner lớn hơn."
+            exit 1
+          fi
+
+      - name: "4. Setup build environment"
+        run: |
+          set -e
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+            git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev \
+            lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev \
+            libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool \
+            squashfs-tools xsltproc zip zlib1g-dev openjdk-8-jdk python2 \
+            python-is-python3 unzip wget
+          sudo update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
+          mkdir -p $HOME/bin
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo > $HOME/bin/repo
+          chmod a+x $HOME/bin/repo
+          echo "$HOME/bin" >> $GITHUB_PATH
+          mkdir -p $CCACHE_DIR
+          ccache -M $CCACHE_MAXSIZE
+
+      - name: "5. Sync sources (lineage-15.0 + 3 repo gtexslte)"
+        run: |
+          set -e
+          mkdir -p $SOURCE_DIR
+          cd $SOURCE_DIR
+          repo init --depth=1 -u $MANIFEST_URL -b $MANIFEST_BRANCH
+          mkdir -p .repo/local_manifests
+          cat > .repo/local_manifests/gtexslte.xml <<'XMLEOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+            <remote name="github" fetch="https://github.com/" />
+            <project name="smt285/device_samsung_gtexslte" path="device/samsung/gtexslte" remote="github" revision="lineage-15.0" />
+            <project name="smt285/kernel_samsung_gtexslte" path="kernel/samsung/gtexslte" remote="github" revision="android-o" />
+            <project name="smt285/vendor_samsung_gtexslte" path="vendor/samsung/gtexslte" remote="github" revision="aosp-8" />
+          </manifest>
+          XMLEOF
+          repo sync -c -j$J_VAL --force-sync --no-clone-bundle --no-tags
+
+      - name: "6. Verify essential sources"
+        run: |
+          set -e
+          cd $SOURCE_DIR
+          for p in device/samsung/gtexslte/BoardConfig.mk \
+                   device/samsung/gtexslte/device.mk \
+                   kernel/samsung/gtexslte/Makefile; do
+            [ -f "$p" ] || { echo "::error::Thiếu file $p"; exit 1; }
+          done
+          [ -d vendor/samsung/gtexslte ] || { echo "::error::Thiếu vendor tree"; exit 1; }
+          echo "Đã xác nhận đủ source"
+
+      - name: "7. Apply ultra-minimal optimizations"
+        run: |
+          set -e
+          cd $SOURCE_DIR
+
+          # --- Low-RAM ---
+          PROP_FILE="device/samsung/gtexslte/system.prop"
+          [ -f "$PROP_FILE" ] || { echo "::error::Không tìm thấy system.prop"; exit 1; }
+          cat >> "$PROP_FILE" <<'PROPEOF'
+
+          # Ultra-minimal low-RAM (SM-T285 = 1536MB)
+          ro.config.low_ram=true
+          ro.config.low_ram.lmk=1
+          ro.config.low_ram.release_always=true
+          persist.sys.background_activity=false
+          PROPEOF
+          echo "✔ Đã áp low-RAM"
+
+          # --- Xóa bootanimation.zip ---
+          find device vendor -name 'bootanimation.zip' -delete 2>/dev/null || true
+          grep -rl "bootanimation.zip" device vendor 2>/dev/null | xargs -r sed -i '/bootanimation\.zip/d' || true
+          echo "✔ Đã xóa boot animation"
+
+          # --- Vô hiệu hóa ứng dụng nặng ---
+          for pkg in Email Exchange2 Browser2 Music VideoEditor Gallery2 \
+                     LiveWallpapers LiveWallpapersPicker BasicDreams \
+                     PrintSpooler SoundRecorder QuickSearchBox; do
+            grep -rl "\b$pkg\b" device/samsung/gtexslte 2>/dev/null | \
+              xargs -r sed -i "s/^\([[:space:]]*$pkg[[:space:]]*\\\\\)/# REMOVED \\1/" || true
+          done
+          echo "✔ Đã vô hiệu hóa ứng dụng không cần"
+
+          # --- Shrink wallpaper ---
+          TINY="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+          for wp in frameworks/base/core/res/res/drawable-nodpi/default_wallpaper.png \
+                    frameworks/base/core/res/res/drawable-xxhdpi/default_wallpaper.png; do
+            if [ -f "$wp" ]; then
+              echo "$TINY" | base64 -d > "$wp"
+              echo "✔ Shrink $wp"
+            fi
+          done
+
+      - name: "8. Build ROM (có thể mất 90-180 phút)"
+        run: |
+          set -e
+          cd $SOURCE_DIR
+          export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+          export USE_CCACHE=1
+          export CCACHE_DIR=$CCACHE_DIR
+          export CCACHE_EXEC=$(command -v ccache)
+          export LC_ALL=C
+          export ALLOW_MISSING_DEPENDENCIES=true
+          source build/envsetup.sh
+          lunch ${TARGET_PRODUCT}-${BUILD_VARIANT}
+          mkdir -p $GITHUB_WORKSPACE/reports
+          make -j$J_VAL bacon 2>&1 | tee $GITHUB_WORKSPACE/reports/build.log
+          echo "== 30 dòng cuối của build log =="
+          tail -30 $GITHUB_WORKSPACE/reports/build.log
+
+      - name: "9. Post-build validation"
+        run: |
+          set -e
+          OUT=$SOURCE_DIR/out/target/product/$DEVICE
+          mkdir -p reports
+          fail=0
+          [ -f $OUT/boot.img ]   || { echo "::error::Thiếu boot.img"; fail=1; }
+          [ -f $OUT/system.img ] || { echo "::error::Thiếu system.img"; fail=1; }
+          grep -q "ro.config.low_ram=true" $OUT/system/build.prop \
+            || { echo "::error::Thiếu low_ram"; fail=1; }
+          grep -q "ro.product.device=$DEVICE" $OUT/system/build.prop \
+            || { echo "::error::Sai device codename"; fail=1; }
+          [ $fail -eq 0 ] || exit 1
+          echo "✔ Post-build OK"
+
+      - name: "10. Package flashable ZIP"
+        run: |
+          set -e
+          OUT=$SOURCE_DIR/out/target/product/$DEVICE
+          STAGE=$GITHUB_WORKSPACE/romstage
+          rm -rf $STAGE && mkdir -p $STAGE/META-INF/com/google/android
+          cp $OUT/boot.img   $STAGE/boot.img
+          cp $OUT/system.img $STAGE/system.img
+
+          cat > $STAGE/META-INF/com/google/android/update-binary <<'UPDEOF'
+          #!/sbin/sh
+          OUTFD=$2; ZIPFILE=$3
+          ui_print() { echo "ui_print $1" >&$OUTFD; echo "ui_print" >&$OUTFD; }
+          ui_print " AOSP 8.0 SM-T285 ULTRA-MINIMAL"
+          DEV=$(getprop ro.product.device)
+          [ "$DEV" = "gtexslte" ] || { ui_print "ERROR: device is $DEV"; exit 1; }
+          unzip -o "$ZIPFILE" boot.img system.img -d /tmp
+          dd if=/tmp/boot.img   of=/dev/block/bootdevice/by-name/boot   || exit 1
+          dd if=/tmp/system.img of=/dev/block/bootdevice/by-name/system || exit 1
+          ui_print "Flash complete. Reboot."
+          UPDEOF
+          chmod 755 $STAGE/META-INF/com/google/android/update-binary
+          echo "# flash logic in update-binary" > $STAGE/META-INF/com/google/android/updater-script
+
+          cd $STAGE
+          zip -r9 $GITHUB_WORKSPACE/$ROM_NAME.zip . -x '*.DS_Store'
+          cd $GITHUB_WORKSPACE
+          sha256sum $ROM_NAME.zip > reports/sha256sum.txt
+          echo "✔ Đã đóng gói: $(du -h $ROM_NAME.zip | cut -f1)"
+
+      - name: "11. Upload artifacts"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ROM_NAME }}-${{ github.run_number }}
+          path: |
+            ${{ env.ROM_NAME }}.zip
+            reports/*.log
+            reports/*.txt
+          retention-days: 30
+          if-no-files-found: warn
