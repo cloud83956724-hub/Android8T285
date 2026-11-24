@@ -1,5 +1,6 @@
 # =============================================================================
 #  BUILD LINEAGEOS 15.0 (ANDROID 8.0) ULTRA-MINIMAL CHO SAMSUNG SM-T285
+#  Đây là file DUY NHẤT chứa logic build. Không tạo file workflow khác.
 # =============================================================================
 name: Build LineageOS 15.0 SM-T285 ULTRA-MINIMAL
 
@@ -53,7 +54,7 @@ jobs:
           J=$(( CPUS > 4 ? 4 : CPUS ))
           echo "J_VAL=$J" >> $GITHUB_ENV
           if [ "$AVAIL_GB" -lt 40 ]; then
-            echo "::error::Chỉ còn ${AVAIL_GB}G đĩa. Cần >=40G."
+            echo "::error::Chỉ còn ${AVAIL_GB}G đĩa. Cần >=40G. Dùng runner lớn hơn."
             exit 1
           fi
 
@@ -120,23 +121,19 @@ jobs:
           set -e
           cd $SOURCE_DIR
 
-          # --- 7.1: Disable test modules (tradefed) — không cần cho user ROM ---
-          # WifiUtil và các util-apps khác vi phạm rule của AOSP 8.0 build system.
-          # Chúng là test utilities, không cần cho ROM user. Disable toàn bộ.
-          UTIL_APPS_DIR="tools/tradefederation/core/util-apps"
-          if [ -d "$UTIL_APPS_DIR" ]; then
-            find "$UTIL_APPS_DIR" -name "Android.mk" -print0 | while IFS= read -r -d '' mk; do
-              echo "# Disabled: test module not needed for user ROM build" > "$mk"
-            done
-            echo "✔ Đã disable toàn bộ util-apps test modules"
-          fi
+          # --- 7.1: Disable TOÀN BỘ test framework (Tradefed + VTS) ---
+          # Đây là test automation frameworks của Google, KHÔNG cần cho user ROM.
+          # Các module test cũ không tương thích với build system của LineageOS 15.0
+          # (vi phạm rule LOCAL_MODULE / LOCAL_PACKAGE_NAME).
+          # Disable cả cây để không phải sửa từng module một (whack-a-mole).
 
-          # Disable các util-apps có thể nằm ngoài core (phòng hờ)
-          OTHER_UTIL_APPS=$(find tools/tradefederation -type d -name "util-apps" 2>/dev/null)
-          for dir in $OTHER_UTIL_APPS; do
-            find "$dir" -name "Android.mk" -print0 | while IFS= read -r -d '' mk; do
-              echo "# Disabled: test module not needed for user ROM build" > "$mk"
-            done
+          for dir in tools/tradefederation test/vts test/vti test/vts-testcase; do
+            if [ -d "$dir" ]; then
+              find "$dir" -name "Android.mk" -print0 | while IFS= read -r -d '' mk; do
+                echo "# Disabled: test framework not needed for user ROM" > "$mk"
+              done
+              echo "✔ Đã disable $dir"
+            fi
           done
 
           # --- 7.2: Low-RAM ---
