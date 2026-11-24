@@ -1,6 +1,5 @@
 # =============================================================================
 #  BUILD LINEAGEOS 15.0 (ANDROID 8.0) ULTRA-MINIMAL CHO SAMSUNG SM-T285
-#  Đây là file DUY NHẤT chứa logic build. Không tạo file workflow khác.
 # =============================================================================
 name: Build LineageOS 15.0 SM-T285 ULTRA-MINIMAL
 
@@ -54,7 +53,7 @@ jobs:
           J=$(( CPUS > 4 ? 4 : CPUS ))
           echo "J_VAL=$J" >> $GITHUB_ENV
           if [ "$AVAIL_GB" -lt 40 ]; then
-            echo "::error::Chỉ còn ${AVAIL_GB}G đĩa. Cần >=40G. Dùng runner lớn hơn."
+            echo "::error::Chỉ còn ${AVAIL_GB}G đĩa. Cần >=40G."
             exit 1
           fi
 
@@ -104,36 +103,41 @@ jobs:
           [ -f kernel/samsung/gtexslte/Makefile ]           || { echo "::error::Thiếu kernel Makefile"; fail=1; }
           [ -d vendor/samsung/gtexslte ]                    || { echo "::error::Thiếu vendor tree"; fail=1; }
           if [ $fail -ne 0 ]; then
-            echo "--- Nội dung device tree ---"
-            ls -la device/samsung/gtexslte/ 2>/dev/null || echo "(không có device tree)"
+            ls -la device/samsung/gtexslte/ 2>/dev/null || true
             exit 1
           fi
-          echo "--- Danh sách file trong device tree ---"
-          ls device/samsung/gtexslte/
-          echo ""
-          echo "--- AndroidProducts.mk (khai báo product) ---"
+          echo "--- AndroidProducts.mk ---"
           cat device/samsung/gtexslte/AndroidProducts.mk
           echo ""
-          echo "--- Dòng PRODUCT_NAME trong các .mk ---"
-          grep -rE '^[[:space:]]*PRODUCT_NAME[[:space:]]*:=' device/samsung/gtexslte/ || echo "(không tìm thấy PRODUCT_NAME)"
+          echo "--- PRODUCT_NAME ---"
+          grep -rE '^[[:space:]]*PRODUCT_NAME[[:space:]]*:=' device/samsung/gtexslte/ || echo "(không tìm thấy)"
           echo ""
           echo "--- Kernel version ---"
           head -5 kernel/samsung/gtexslte/Makefile
-          echo "Đã xác nhận đủ source"
 
       - name: "7. Apply ultra-minimal optimizations"
         run: |
           set -e
           cd $SOURCE_DIR
 
-          # --- 7.1: Fix WifiUtil (tradefed test module) ---
-          WIFIUTIL_MK="tools/tradefederation/core/util-apps/WifiUtil/Android.mk"
-          if [ -f "$WIFIUTIL_MK" ]; then
-            if ! grep -q "^LOCAL_MODULE := WifiUtil" "$WIFIUTIL_MK"; then
-              sed -i '/LOCAL_PACKAGE_NAME := WifiUtil/i LOCAL_MODULE := WifiUtil' "$WIFIUTIL_MK"
-              echo "✔ Đã thêm LOCAL_MODULE cho WifiUtil"
-            fi
+          # --- 7.1: Disable test modules (tradefed) — không cần cho user ROM ---
+          # WifiUtil và các util-apps khác vi phạm rule của AOSP 8.0 build system.
+          # Chúng là test utilities, không cần cho ROM user. Disable toàn bộ.
+          UTIL_APPS_DIR="tools/tradefederation/core/util-apps"
+          if [ -d "$UTIL_APPS_DIR" ]; then
+            find "$UTIL_APPS_DIR" -name "Android.mk" -print0 | while IFS= read -r -d '' mk; do
+              echo "# Disabled: test module not needed for user ROM build" > "$mk"
+            done
+            echo "✔ Đã disable toàn bộ util-apps test modules"
           fi
+
+          # Disable các util-apps có thể nằm ngoài core (phòng hờ)
+          OTHER_UTIL_APPS=$(find tools/tradefederation -type d -name "util-apps" 2>/dev/null)
+          for dir in $OTHER_UTIL_APPS; do
+            find "$dir" -name "Android.mk" -print0 | while IFS= read -r -d '' mk; do
+              echo "# Disabled: test module not needed for user ROM build" > "$mk"
+            done
+          done
 
           # --- 7.2: Low-RAM ---
           PROP_FILE="device/samsung/gtexslte/system.prop"
