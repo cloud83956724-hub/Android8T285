@@ -126,6 +126,16 @@ jobs:
           set -e
           cd $SOURCE_DIR
 
+          # --- 7.1: Fix WifiUtil (tradefed test module) ---
+          WIFIUTIL_MK="tools/tradefederation/core/util-apps/WifiUtil/Android.mk"
+          if [ -f "$WIFIUTIL_MK" ]; then
+            if ! grep -q "^LOCAL_MODULE := WifiUtil" "$WIFIUTIL_MK"; then
+              sed -i '/LOCAL_PACKAGE_NAME := WifiUtil/i LOCAL_MODULE := WifiUtil' "$WIFIUTIL_MK"
+              echo "✔ Đã thêm LOCAL_MODULE cho WifiUtil"
+            fi
+          fi
+
+          # --- 7.2: Low-RAM ---
           PROP_FILE="device/samsung/gtexslte/system.prop"
           [ -f "$PROP_FILE" ] || { echo "::error::Không tìm thấy system.prop"; exit 1; }
           cat >> "$PROP_FILE" <<'PROPEOF'
@@ -138,10 +148,12 @@ jobs:
           PROPEOF
           echo "✔ Đã áp low-RAM"
 
+          # --- 7.3: Xóa boot animation ---
           find device vendor -name 'bootanimation.zip' -delete 2>/dev/null || true
           grep -rl "bootanimation.zip" device vendor 2>/dev/null | xargs -r sed -i '/bootanimation\.zip/d' || true
           echo "✔ Đã xóa boot animation"
 
+          # --- 7.4: Vô hiệu hóa ứng dụng nặng ---
           for pkg in Email Exchange2 Browser2 Music VideoEditor Gallery2 \
                      LiveWallpapers LiveWallpapersPicker BasicDreams \
                      PrintSpooler SoundRecorder QuickSearchBox; do
@@ -150,6 +162,7 @@ jobs:
           done
           echo "✔ Đã vô hiệu hóa ứng dụng không cần"
 
+          # --- 7.5: Shrink wallpaper ---
           TINY="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
           for wp in frameworks/base/core/res/res/drawable-nodpi/default_wallpaper.png \
                     frameworks/base/core/res/res/drawable-xxhdpi/default_wallpaper.png; do
