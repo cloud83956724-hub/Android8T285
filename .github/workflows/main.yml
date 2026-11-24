@@ -120,11 +120,24 @@ jobs:
           set -e
           cd $SOURCE_DIR
 
-          # --- 7.1: XÓA HẲN test framework (không chỉ disable) ---
-          # Tradefed và VTS là test automation của Google, KHÔNG cần cho user ROM.
-          # Các module test này vi phạm rule LOCAL_MODULE của build system 8.0.
-          # Xóa hẳn thư mục để build system không bao giờ "including" chúng nữa
-          # — dứt điểm whack-a-mole (util-apps → test-apps → tools/test/...).
+          # --- 7.1: XÓA TẤT CẢ thư mục VTS (Vendor Test Suite) ---
+          # VTS là test framework của Google, KHÔNG cần cho user ROM.
+          # Các module VTS nằm rải rác trong hardware/interfaces/*/vts/
+          # và tham chiếu đến thư viện VtsHalHidlTargetTestBase đã bị xóa.
+          # Xóa tất cả thư mục con tên "vts" trong các cây HAL và test.
+          # Đây là cách dứt điểm, không phải whack-a-mole từng module.
+
+          # Xóa các thư mục vts trong hardware interfaces (nguồn lỗi chính)
+          for root_dir in hardware/interfaces system/hardware/interfaces frameworks/hardware/interfaces; do
+            if [ -d "$root_dir" ]; then
+              find "$root_dir" -type d -name "vts" -print0 | while IFS= read -r -d '' vts_dir; do
+                rm -rf "$vts_dir"
+              done
+              echo "✔ Đã xóa các thư mục vts trong $root_dir"
+            fi
+          done
+
+          # Xóa các thư mục test framework lớn khác (nếu còn sót)
           for dir in test tools/test tools/tradefederation; do
             if [ -d "$dir" ]; then
               rm -rf "$dir"
