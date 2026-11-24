@@ -87,7 +87,6 @@ jobs:
           cat > .repo/local_manifests/gtexslte.xml <<'XMLEOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <manifest>
-            <remote name="github" fetch="https://github.com/" />
             <project name="smt285/device_samsung_gtexslte" path="device/samsung/gtexslte" remote="github" revision="lineage-15.0" />
             <project name="smt285/kernel_samsung_gtexslte" path="kernel/samsung/gtexslte" remote="github" revision="android-o" />
             <project name="smt285/vendor_samsung_gtexslte" path="vendor/samsung/gtexslte" remote="github" revision="aosp-8" />
