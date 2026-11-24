@@ -94,12 +94,12 @@ jobs:
           XMLEOF
           repo sync -c -j$J_VAL --force-sync --no-clone-bundle --no-tags
 
-            - name: "6. Verify essential sources"
+      - name: "6. Verify essential sources"
         run: |
           set -e
           cd $SOURCE_DIR
           fail=0
-          [ -f device/samsung/gtexslte/BoardConfig.mk ]    || { echo "::error::Thiếu BoardConfig.mk"; fail=1; }
+          [ -f device/samsung/gtexslte/BoardConfig.mk ]     || { echo "::error::Thiếu BoardConfig.mk"; fail=1; }
           [ -f device/samsung/gtexslte/AndroidProducts.mk ] || { echo "::error::Thiếu AndroidProducts.mk"; fail=1; }
           [ -f kernel/samsung/gtexslte/Makefile ]           || { echo "::error::Thiếu kernel Makefile"; fail=1; }
           [ -d vendor/samsung/gtexslte ]                    || { echo "::error::Thiếu vendor tree"; fail=1; }
@@ -108,19 +108,14 @@ jobs:
             ls -la device/samsung/gtexslte/ 2>/dev/null || echo "(không có device tree)"
             exit 1
           fi
-
           echo "--- Danh sách file trong device tree ---"
           ls device/samsung/gtexslte/
-
           echo ""
           echo "--- AndroidProducts.mk (khai báo product) ---"
           cat device/samsung/gtexslte/AndroidProducts.mk
-
           echo ""
           echo "--- Dòng PRODUCT_NAME trong các .mk ---"
-          grep -rE '^[[:space:]]*PRODUCT_NAME[[:space:]]*:=' device/samsung/gtexslte/ || \
-            echo "(không tìm thấy PRODUCT_NAME)"
-
+          grep -rE '^[[:space:]]*PRODUCT_NAME[[:space:]]*:=' device/samsung/gtexslte/ || echo "(không tìm thấy PRODUCT_NAME)"
           echo ""
           echo "--- Kernel version ---"
           head -5 kernel/samsung/gtexslte/Makefile
@@ -131,7 +126,6 @@ jobs:
           set -e
           cd $SOURCE_DIR
 
-          # --- Low-RAM ---
           PROP_FILE="device/samsung/gtexslte/system.prop"
           [ -f "$PROP_FILE" ] || { echo "::error::Không tìm thấy system.prop"; exit 1; }
           cat >> "$PROP_FILE" <<'PROPEOF'
@@ -144,12 +138,10 @@ jobs:
           PROPEOF
           echo "✔ Đã áp low-RAM"
 
-          # --- Xóa bootanimation.zip ---
           find device vendor -name 'bootanimation.zip' -delete 2>/dev/null || true
           grep -rl "bootanimation.zip" device vendor 2>/dev/null | xargs -r sed -i '/bootanimation\.zip/d' || true
           echo "✔ Đã xóa boot animation"
 
-          # --- Vô hiệu hóa ứng dụng nặng ---
           for pkg in Email Exchange2 Browser2 Music VideoEditor Gallery2 \
                      LiveWallpapers LiveWallpapersPicker BasicDreams \
                      PrintSpooler SoundRecorder QuickSearchBox; do
@@ -158,7 +150,6 @@ jobs:
           done
           echo "✔ Đã vô hiệu hóa ứng dụng không cần"
 
-          # --- Shrink wallpaper ---
           TINY="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
           for wp in frameworks/base/core/res/res/drawable-nodpi/default_wallpaper.png \
                     frameworks/base/core/res/res/drawable-xxhdpi/default_wallpaper.png; do
@@ -193,10 +184,8 @@ jobs:
           fail=0
           [ -f $OUT/boot.img ]   || { echo "::error::Thiếu boot.img"; fail=1; }
           [ -f $OUT/system.img ] || { echo "::error::Thiếu system.img"; fail=1; }
-          grep -q "ro.config.low_ram=true" $OUT/system/build.prop \
-            || { echo "::error::Thiếu low_ram"; fail=1; }
-          grep -q "ro.product.device=$DEVICE" $OUT/system/build.prop \
-            || { echo "::error::Sai device codename"; fail=1; }
+          grep -q "ro.config.low_ram=true" $OUT/system/build.prop || { echo "::error::Thiếu low_ram"; fail=1; }
+          grep -q "ro.product.device=$DEVICE" $OUT/system/build.prop || { echo "::error::Sai device codename"; fail=1; }
           [ $fail -eq 0 ] || exit 1
           echo "✔ Post-build OK"
 
