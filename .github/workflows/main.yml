@@ -94,16 +94,36 @@ jobs:
           XMLEOF
           repo sync -c -j$J_VAL --force-sync --no-clone-bundle --no-tags
 
-      - name: "6. Verify essential sources"
+            - name: "6. Verify essential sources"
         run: |
           set -e
           cd $SOURCE_DIR
-          for p in device/samsung/gtexslte/BoardConfig.mk \
-                   device/samsung/gtexslte/device.mk \
-                   kernel/samsung/gtexslte/Makefile; do
-            [ -f "$p" ] || { echo "::error::Thiếu file $p"; exit 1; }
-          done
-          [ -d vendor/samsung/gtexslte ] || { echo "::error::Thiếu vendor tree"; exit 1; }
+          fail=0
+          [ -f device/samsung/gtexslte/BoardConfig.mk ]    || { echo "::error::Thiếu BoardConfig.mk"; fail=1; }
+          [ -f device/samsung/gtexslte/AndroidProducts.mk ] || { echo "::error::Thiếu AndroidProducts.mk"; fail=1; }
+          [ -f kernel/samsung/gtexslte/Makefile ]           || { echo "::error::Thiếu kernel Makefile"; fail=1; }
+          [ -d vendor/samsung/gtexslte ]                    || { echo "::error::Thiếu vendor tree"; fail=1; }
+          if [ $fail -ne 0 ]; then
+            echo "--- Nội dung device tree ---"
+            ls -la device/samsung/gtexslte/ 2>/dev/null || echo "(không có device tree)"
+            exit 1
+          fi
+
+          echo "--- Danh sách file trong device tree ---"
+          ls device/samsung/gtexslte/
+
+          echo ""
+          echo "--- AndroidProducts.mk (khai báo product) ---"
+          cat device/samsung/gtexslte/AndroidProducts.mk
+
+          echo ""
+          echo "--- Dòng PRODUCT_NAME trong các .mk ---"
+          grep -rE '^[[:space:]]*PRODUCT_NAME[[:space:]]*:=' device/samsung/gtexslte/ || \
+            echo "(không tìm thấy PRODUCT_NAME)"
+
+          echo ""
+          echo "--- Kernel version ---"
+          head -5 kernel/samsung/gtexslte/Makefile
           echo "Đã xác nhận đủ source"
 
       - name: "7. Apply ultra-minimal optimizations"
