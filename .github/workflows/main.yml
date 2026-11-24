@@ -1,6 +1,5 @@
 # =============================================================================
 #  BUILD LINEAGEOS 15.0 (ANDROID 8.0) ULTRA-MINIMAL CHO SAMSUNG SM-T285
-#  Đây là file DUY NHẤT chứa logic build. Không tạo file workflow khác.
 # =============================================================================
 name: Build LineageOS 15.0 SM-T285 ULTRA-MINIMAL
 
@@ -54,7 +53,7 @@ jobs:
           J=$(( CPUS > 4 ? 4 : CPUS ))
           echo "J_VAL=$J" >> $GITHUB_ENV
           if [ "$AVAIL_GB" -lt 40 ]; then
-            echo "::error::Chỉ còn ${AVAIL_GB}G đĩa. Cần >=40G. Dùng runner lớn hơn."
+            echo "::error::Chỉ còn ${AVAIL_GB}G đĩa. Cần >=40G."
             exit 1
           fi
 
@@ -121,18 +120,15 @@ jobs:
           set -e
           cd $SOURCE_DIR
 
-          # --- 7.1: Disable TOÀN BỘ test framework (Tradefed + VTS) ---
-          # Đây là test automation frameworks của Google, KHÔNG cần cho user ROM.
-          # Các module test cũ không tương thích với build system của LineageOS 15.0
-          # (vi phạm rule LOCAL_MODULE / LOCAL_PACKAGE_NAME).
-          # Disable cả cây để không phải sửa từng module một (whack-a-mole).
-
-          for dir in tools/tradefederation test/vts test/vti test/vts-testcase; do
+          # --- 7.1: XÓA HẲN test framework (không chỉ disable) ---
+          # Tradefed và VTS là test automation của Google, KHÔNG cần cho user ROM.
+          # Các module test này vi phạm rule LOCAL_MODULE của build system 8.0.
+          # Xóa hẳn thư mục để build system không bao giờ "including" chúng nữa
+          # — dứt điểm whack-a-mole (util-apps → test-apps → tools/test/...).
+          for dir in test tools/test tools/tradefederation; do
             if [ -d "$dir" ]; then
-              find "$dir" -name "Android.mk" -print0 | while IFS= read -r -d '' mk; do
-                echo "# Disabled: test framework not needed for user ROM" > "$mk"
-              done
-              echo "✔ Đã disable $dir"
+              rm -rf "$dir"
+              echo "✔ Đã xóa $dir"
             fi
           done
 
