@@ -120,34 +120,53 @@ jobs:
           set -e
           cd $SOURCE_DIR
 
-          # --- 7.1: Vô hiệu hóa VTS nhưng KHÔNG xóa thư mục ---
-          # Lý do: các Android.bp CHA có subdirs trỏ tới .../vts/.../Android.bp.
-          # Nếu xóa thư mục → soong báo "not found". Nếu làm rỗng file → OK
-          # (blueprint chấp nhận empty .bp, không định nghĩa module nào).
-          # Đây là cách duy nhất để vừa không build test, vừa không vỡ subdir tree.
+          # --- 7.1: Vô hiệu hóa VTS/test framework, đúng cú pháp comment ---
+          # Blueprint (.bp) dùng // cho comment.
+          # Makefile (.mk) dùng # cho comment.
+          # Dùng sai cú pháp → parser fail ngay dòng 1.
+          # Gut nội dung file (không xóa thư mục) để các Android.bp CHA
+          # có subdirs trỏ tới vẫn resolve được.
 
+          gut_dir() {
+            local d="$1"
+            [ -d "$d" ] || return 0
+            find "$d" -type f -name "Android.bp" -print0 | \
+              while IFS= read -r -d '' f; do
+                echo "// Disabled: test framework not needed for user ROM" > "$f"
+              done
+            find "$d" -type f -name "Android.mk" -print0 | \
+              while IFS= read -r -d '' f; do
+                echo "# Disabled: test framework not needed for user ROM" > "$f"
+              done
+          }
+
+          # Top-level test trees
+          for d in test tools/test tools/tradefederation; do
+            if [ -d "$d" ]; then
+              gut_dir "$d"
+              echo "✔ Đã vô hiệu hóa $d"
+            fi
+          done
+
+          # VTS subdirs trong các cây hardware interfaces
           for root_dir in hardware/interfaces system/hardware/interfaces frameworks/hardware/interfaces; do
             if [ -d "$root_dir" ]; then
-              while IFS= read -r -d '' vts_dir; do
-                find "$vts_dir" -type f \( -name "Android.bp" -o -name "Android.mk" \) -print0 | \
-                  while IFS= read -r -d '' f; do
-                    echo "# Disabled: VTS test framework not needed for user ROM" > "$f"
-                  done
-              done < <(find "$root_dir" -type d -name "vts" -print0)
-              echo "✔ Đã vô hiệu hóa các thư mục vts trong $root_dir"
+              find "$root_dir" -type d -name "vts" -print0 | \
+                while IFS= read -r -d '' vts_dir; do
+                  gut_dir "$vts_dir"
+                done
+              echo "✔ Đã vô hiệu hóa các vts trong $root_dir"
             fi
           done
 
-          # tools/tradefederation, tools/test, test - cùng cách: gut files, không xóa
-          for dir in tools/tradefederation tools/test test; do
-            if [ -d "$dir" ]; then
-              find "$dir" -type f \( -name "Android.bp" -o -name "Android.mk" \) -print0 | \
-                while IFS= read -r -d '' f; do
-                  echo "# Disabled: test framework not needed for user ROM" > "$f"
-                done
-              echo "✔ Đã vô hiệu hóa $dir (gut files, không xóa thư mục)"
-            fi
-          done
+          # Safety check: không được còn .bp bắt đầu bằng #
+          BAD=$(grep -rl '^#' --include="Android.bp" test tools 2>/dev/null | head -5)
+          if [ -n "$BAD" ]; then
+            echo "::error::Còn .bp bắt đầu bằng # (invalid blueprint syntax):"
+            echo "$BAD"
+            exit 1
+          fi
+          echo "✔ Blueprint comment syntax check passed"
 
           # --- 7.2: Low-RAM ---
           PROP_FILE="device/samsung/gtexslte/system.prop"
