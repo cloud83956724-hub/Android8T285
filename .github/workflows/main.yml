@@ -120,28 +120,32 @@ jobs:
           set -e
           cd $SOURCE_DIR
 
-          # --- 7.1: XÓA TẤT CẢ thư mục VTS (Vendor Test Suite) ---
-          # VTS là test framework của Google, KHÔNG cần cho user ROM.
-          # Các module VTS nằm rải rác trong hardware/interfaces/*/vts/
-          # và tham chiếu đến thư viện VtsHalHidlTargetTestBase đã bị xóa.
-          # Xóa tất cả thư mục con tên "vts" trong các cây HAL và test.
-          # Đây là cách dứt điểm, không phải whack-a-mole từng module.
+          # --- 7.1: Vô hiệu hóa VTS nhưng KHÔNG xóa thư mục ---
+          # Lý do: các Android.bp CHA có subdirs trỏ tới .../vts/.../Android.bp.
+          # Nếu xóa thư mục → soong báo "not found". Nếu làm rỗng file → OK
+          # (blueprint chấp nhận empty .bp, không định nghĩa module nào).
+          # Đây là cách duy nhất để vừa không build test, vừa không vỡ subdir tree.
 
-          # Xóa các thư mục vts trong hardware interfaces (nguồn lỗi chính)
           for root_dir in hardware/interfaces system/hardware/interfaces frameworks/hardware/interfaces; do
             if [ -d "$root_dir" ]; then
-              find "$root_dir" -type d -name "vts" -print0 | while IFS= read -r -d '' vts_dir; do
-                rm -rf "$vts_dir"
-              done
-              echo "✔ Đã xóa các thư mục vts trong $root_dir"
+              while IFS= read -r -d '' vts_dir; do
+                find "$vts_dir" -type f \( -name "Android.bp" -o -name "Android.mk" \) -print0 | \
+                  while IFS= read -r -d '' f; do
+                    echo "# Disabled: VTS test framework not needed for user ROM" > "$f"
+                  done
+              done < <(find "$root_dir" -type d -name "vts" -print0)
+              echo "✔ Đã vô hiệu hóa các thư mục vts trong $root_dir"
             fi
           done
 
-          # Xóa các thư mục test framework lớn khác (nếu còn sót)
-          for dir in test tools/test tools/tradefederation; do
+          # tools/tradefederation, tools/test, test - cùng cách: gut files, không xóa
+          for dir in tools/tradefederation tools/test test; do
             if [ -d "$dir" ]; then
-              rm -rf "$dir"
-              echo "✔ Đã xóa $dir"
+              find "$dir" -type f \( -name "Android.bp" -o -name "Android.mk" \) -print0 | \
+                while IFS= read -r -d '' f; do
+                  echo "# Disabled: test framework not needed for user ROM" > "$f"
+                done
+              echo "✔ Đã vô hiệu hóa $dir (gut files, không xóa thư mục)"
             fi
           done
 
